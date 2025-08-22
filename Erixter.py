@@ -1,4 +1,5 @@
-import os, re, requests, signal, sys, time, uvicorn, yt_dlp
+import asyncio, os, re, requests, signal
+import sys, time, uvicorn, yt_dlp
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Query
@@ -46,7 +47,7 @@ PUBLIC_IP = get_public_ip()
 
 async def download_media(video_id: str, video: bool):
     url = f"https://www.youtube.com/watch?v={video_id}"
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     def media_dl():
         download_format = (

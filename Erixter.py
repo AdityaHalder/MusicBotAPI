@@ -123,6 +123,6 @@ async def stream(query: str = Query(..., description="YouTube query or link")):
     return await stream_from_telegram(msg_id)
 
 
-# -------- Run Uvicorn --------
+# -------- Run Server --------
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=PORT, reload=True)
+    uvicorn.run(app, host="0.0.0.0", port=PORT)

@@ -1,6 +1,8 @@
 import asyncio
 import os
 import tempfile
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Query
 from fastapi.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -24,26 +26,38 @@ PORT = int(os.getenv("PORT", 1470))
 DB_NAME = "youtube_files"
 COLLECTION_NAME = "videos"
 
-# ====== FastAPI, Mongo, Pyrogram ======
-app = FastAPI()
+# ====== Mongo + Pyrogram ======
 mongo_client = AsyncIOMotorClient(MONGO_URI)
 db = mongo_client[DB_NAME]
 collection = db[COLLECTION_NAME]
 tg_client = Client("ytbot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-
-# -------- FastAPI lifecycle --------
-@app.on_event("startup")
-async def startup():
+# -------- FastAPI lifespan --------
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
     await tg_client.start()
     print("✅ Pyrogram client started")
 
-@app.on_event("shutdown")
-async def shutdown():
+    # Startup এ চ্যানেলে মেসেজ পাঠানো
+    await tg_client.send_message(
+        chat_id=CHANNEL_ID,
+        text=f"🚀 Bot is now online!\nServer running on port {PORT}."
+    )
+
+    yield  # এখানে থেকে app চলবে
+
+    # Shutdown
+    await tg_client.send_message(
+        chat_id=CHANNEL_ID,
+        text="🛑 Bot is shutting down..."
+    )
     await tg_client.stop()
     mongo_client.close()
     print("🛑 Pyrogram client stopped & DB closed")
 
+# ====== FastAPI app ======
+app = FastAPI(lifespan=lifespan)
 
 # -------- Get YouTube Video ID --------
 async def get_video_id(query: str) -> str:
@@ -55,7 +69,6 @@ async def get_video_id(query: str) -> str:
         videos_search = VideosSearch(query, limit=1)
         result = videos_search.result()
         return result["result"][0]["id"]
-
 
 # -------- Download YouTube Audio --------
 async def download_audio(video_id: str) -> str:
@@ -76,7 +89,6 @@ async def download_audio(video_id: str) -> str:
     for f in os.listdir(tmpdir):
         return os.path.join(tmpdir, f)
 
-
 # -------- Stream from Telegram --------
 async def stream_from_telegram(msg_id: int):
     async def file_iterator():
@@ -87,7 +99,6 @@ async def stream_from_telegram(msg_id: int):
         ):
             yield chunk
     return StreamingResponse(file_iterator(), media_type="audio/mpeg")
-
 
 # -------- Main Endpoint --------
 @app.get("/stream")
@@ -121,7 +132,6 @@ async def stream(query: str = Query(..., description="YouTube query or link")):
 
     # Stream directly from Telegram
     return await stream_from_telegram(msg_id)
-
 
 # -------- Run Server --------
 if __name__ == "__main__":

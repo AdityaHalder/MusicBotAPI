@@ -35,7 +35,7 @@ except Exception:
     print("⚠️ Invalid 'MONGO_URL'")
     sys.exit()
 
-mongodb = mdb.erixter_api_tests
+mongodb = mdb.erixter_api_testx
 
 audio_db = mongodb.audio_db
 video_db = mongodb.video_db
@@ -48,6 +48,18 @@ def get_public_ip() -> str:
         return "127.0.0.1"
 
 PUBLIC_IP = get_public_ip()
+
+
+def safe_filename(name: str, ext: str) -> str:
+    # Remove invalid filesystem characters
+    name = re.sub(r'[\\/*?:"<>|]', "", name)
+    # Strip leading/trailing spaces
+    name = name.strip()
+    # Limit length
+    if len(name) > 100:
+        name = name[:100]
+    return f"{name}{ext}"
+
 
 
 async def download_media(video_id: str, video: bool):
@@ -131,10 +143,9 @@ async def search_videos(
     query: str = Query(..., description="Search term"),
     video: bool = Query(False, description="True for video, False for audio"),
 ):
-    # 1. Pick the right collection
     db = video_db if video else audio_db
 
-    # 2. Search YouTube
+    # 1. Search YouTube
     result = await VideosSearch(query, limit=1).next()
     items = result.get("result", [])
     if not items:
@@ -142,14 +153,23 @@ async def search_videos(
 
     v = items[0]
     vid_id = v["id"]
-    duration_str = v.get("duration", "0:00")
+    duration_str = v.get("duration")
 
-    # 3. Return cached doc if found
+    # 2. Detect live streams
+    if not duration_str or duration_str.lower() == "live":
+        return {
+            "id": vid_id,
+            "title": v["title"],
+            "channel": v.get("channel", {}).get("name"),
+            "error": "Live streams not supported",
+        }
+
+    # 3. Check cache
     cached = await db.find_one({"id": vid_id})
     if cached:
         return clean_mongo(cached)
 
-    # 4. Parse duration into seconds
+    # 4. Parse duration string into seconds
     parts = list(map(int, duration_str.split(":")))
     if len(parts) == 3:
         hrs, mins, secs = parts
@@ -159,33 +179,36 @@ async def search_videos(
         hrs, mins, secs = 0, 0, parts[0]
     duration_seconds = hrs * 3600 + mins * 60 + secs
 
-    # 5. Download locally
+    # 5. Download media (your function)
     filepath = await download_media(vid_id, video)
 
-    # 6. Build caption with artist & duration
-    caption = (
-        f"{v['title']}\n"
-        f"Artist: @ErixterNetwork\n"
-        f"Duration: {duration_str}"
-    )
+    # 6. Prepare safe file name
+    ext = os.path.splitext(filepath)[1]
+    file_name = safe_filename(v["title"], ext)
 
-    # 7. Send as document (force document mode)
-    tg_msg = await bot.send_document(
-        chat_id=CHANNEL_ID,
-        document=filepath,
-        caption=caption,
-        file_name=f"{vid_id}{os.path.splitext(filepath)[1]}",
-    )
+    # 7. Send to Telegram
+    if video:
+        tg_msg = await bot.send_video(
+            chat_id=CHANNEL_ID,
+            video=filepath,
+            caption=f"{v['title']}\nUploader: @ErixterNetwork",
+            duration=duration_seconds,
+            supports_streaming=True,
+            file_name=file_name,
+        )
+        file_id = tg_msg.video.file_id
+    else:
+        tg_msg = await bot.send_audio(
+            chat_id=CHANNEL_ID,
+            audio=filepath,
+            title=v["title"],
+            performer="@ErixterNetwork",
+            duration=duration_seconds,
+            file_name=file_name,
+        )
+        file_id = tg_msg.audio.file_id
 
-    # 8. Extract and cache the file_id
-    tg_media_file = (
-        tg_msg.document
-        or tg_msg.audio
-        or tg_msg.video
-    )
-    file_id = tg_media_file.file_id
-
-    # 9. Build Telegram CDN URL
+    # 8. Get Telegram download URL
     async with aiohttp.ClientSession() as session:
         async with session.get(
             f"https://api.telegram.org/bot{BOT_TOKEN}/getFile?file_id={file_id}"
@@ -194,8 +217,7 @@ async def search_videos(
             file_path = data["result"]["file_path"]
             download_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
 
-
-    # 10. Persist metadata
+    # 9. Save record
     record = {
         "id": vid_id,
         "title": v["title"],
@@ -209,8 +231,8 @@ async def search_videos(
         "download_url": download_url,
     }
     await db.insert_one(record)
-    
-    # 11. Cleanup
+
+    # 10. Cleanup local file
     try:
         os.remove(filepath)
     except OSError:

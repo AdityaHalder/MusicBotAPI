@@ -144,5 +144,5 @@ async def search_videos(query: str = Query(..., description="Search query")):
 
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=1489, reload=False)
+    uvicorn.run("Erixter:app", host="0.0.0.0", port=1489, reload=False)
 

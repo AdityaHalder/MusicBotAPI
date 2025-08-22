@@ -175,11 +175,15 @@ async def search_videos(
         document=filepath,
         caption=caption,
         file_name=f"{vid_id}{os.path.splitext(filepath)[1]}",
-        disable_content_type_detection=True,
     )
 
     # 8. Extract and cache the file_id
-    file_id = tg_msg.document.file_id
+    tg_media_file = (
+        tg_msg.document
+        or tg_msg.audio
+        or tg_msg.video
+    )
+    file_id = tg_media_file.file_id
 
     # 9. Build Telegram CDN URL
     tg_file = await bot.get_file(file_id)

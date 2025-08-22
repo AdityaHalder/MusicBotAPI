@@ -6,14 +6,18 @@ from pyrogram import Client
 from pyrogram.types import Message
 from youtubesearchpython.__future__ import VideosSearch
 import yt_dlp
+from dotenv import load_dotenv
+from contextlib import asynccontextmanager
 
 # --------------------------
-# Config (from env or hardcode)
+# Load ENV variables
 # --------------------------
-API_ID = int(os.getenv("API_ID", "123456"))
-API_HASH = os.getenv("API_HASH", "abcdef1234567890abcdef1234567890")
-BOT_TOKEN = os.getenv("BOT_TOKEN", "123456:ABCDEF")
-CHANNEL_ID = int(os.getenv("CHANNEL_ID", "-1001234567890"))
+load_dotenv("config.env")
+
+API_ID = int(os.getenv("API_ID"))
+API_HASH = os.getenv("API_HASH")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
 
 # --------------------------
 # Pyrogram client
@@ -44,13 +48,11 @@ async def download_audio(video_id: str) -> str:
         "outtmpl": f"{video_id}.%(ext)s",
         "quiet": True,
     }
-
     loop = asyncio.get_event_loop()
     def run_ydl():
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=True)
             return ydl.prepare_filename(info)
-
     return await loop.run_in_executor(None, run_ydl)
 
 async def get_cdn(file_id: int) -> str:
@@ -60,8 +62,6 @@ async def get_cdn(file_id: int) -> str:
 # --------------------------
 # Lifespan
 # --------------------------
-from contextlib import asynccontextmanager
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await tg_client.start()
@@ -114,4 +114,4 @@ async def stream(query: str = Query(..., description="YouTube query or link")):
 # Run
 # --------------------------
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=1490)
+    uvicorn.run(app, host="0.0.0.0", port=1470)

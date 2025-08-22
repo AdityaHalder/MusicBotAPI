@@ -114,4 +114,4 @@ async def stream(query: str = Query(..., description="YouTube query or link")):
 # Run
 # --------------------------
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=1470)
+    uvicorn.run(app, host="0.0.0.0", port=1490)

@@ -188,7 +188,7 @@ async def search_videos(
     # 9. Build Telegram CDN URL
     async with aiohttp.ClientSession() as session:
         async with session.get(
-            f"https://api.telegram.org/bot{bot.token}/getFile?file_id={file_id}"
+            f"https://api.telegram.org/bot{BOT_TOKEN}/getFile?file_id={file_id}"
         ) as resp:
             data = await resp.json()
             file_path = data["result"]["file_path"]

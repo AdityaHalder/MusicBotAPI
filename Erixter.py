@@ -71,7 +71,7 @@ async def download_media(video_id: str, video: bool):
         }
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
-            filepath = os.path.join("downloads", f"{info['id']}.{info['ext']}")
+            filepath = os.path.join("downloads", f"{info['id']}.{ext}")
             if os.path.exists(filepath):
                 return filepath
             ydl.download([url])

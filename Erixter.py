@@ -1,19 +1,21 @@
 import asyncio, os, re, requests, signal
-import sys, time, uvicorn, yt_dlp
+import sys, time, yt_dlp, uvicorn
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Query
 from fastapi.responses import StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 from pyrogram import Client, idle
 from urllib.parse import urlparse, parse_qs
 from youtubesearchpython.__future__ import VideosSearch
+from contextlib import asynccontextmanager
 
 
-
-
+# =======================
+# Load ENV
+# =======================
 load_dotenv("config.env")
-
 
 API_ID = int(os.getenv("API_ID", 0))
 API_HASH = str(os.getenv("API_HASH", ""))
@@ -21,7 +23,9 @@ BOT_TOKEN = str(os.getenv("BOT_TOKEN", ""))
 CHANNEL_ID = int(os.getenv("CHANNEL_ID", 0))
 
 
-app = FastAPI(title="YouTube API")
+# =======================
+# Init Pyrogram Bot
+# =======================
 bot = Client(
     "Erixter",
     api_id=API_ID,
@@ -32,8 +36,9 @@ bot = Client(
 db = {}
 
 
-
-
+# =======================
+# Utils
+# =======================
 def get_public_ip() -> str:
     try:
         return requests.get("https://api.ipify.org", timeout=5).text.strip()
@@ -41,8 +46,6 @@ def get_public_ip() -> str:
         return "127.0.0.1"
 
 PUBLIC_IP = get_public_ip()
-
-
 
 
 async def download_media(video_id: str, video: bool):
@@ -78,20 +81,42 @@ async def download_media(video_id: str, video: bool):
     return await loop.run_in_executor(None, media_dl)
 
 
+# =======================
+# FastAPI lifespan
+# =======================
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    await bot.start()
+    try:
+        await bot.send_message(CHANNEL_ID, "✅ Bot started and API is running!")
+    except Exception as e:
+        print(f"Failed to notify channel: {e}")
+
+    yield  # <-- API runs here
+
+    # Shutdown
+    await bot.stop()
+    print("Bot stopped")
 
 
+# =======================
+# FastAPI app
+# =======================
+app = FastAPI(title="YouTube API", lifespan=lifespan)
 
-
+# optional CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/")
 async def root():
     return {"message": "YouTube API is running"}
-
-
-
-
-
 
 
 @app.get("/search")
@@ -100,10 +125,10 @@ async def search_videos(query: str = Query(..., description="Search query")):
         videos_search = VideosSearch(query, limit=1)
         result = await videos_search.next()
         videos = result.get("result", [])
-        
+
         if not videos:
             return {}
-        
+
         v = videos[0]
         return {
             "id": v["id"],
@@ -113,38 +138,11 @@ async def search_videos(query: str = Query(..., description="Search query")):
             "thumbnail": v["thumbnails"][0]["url"] if v.get("thumbnails") else None,
             "stream_url": None
         }
-    
+
     except Exception:
         return {}
 
 
-
-
-
-
-
-
-def handle_shutdown(sig, frame):
-    print("Server stopped")
-    sys.exit(0)
-
-signal.signal(signal.SIGINT, handle_shutdown)
-signal.signal(signal.SIGTERM, handle_shutdown)
-
-
-async def start_bot():
-    await bot.start()
-    try:
-        await bot.send_message(
-            CHANNEL_ID, "✅ Bot started and is running with API!"
-        )
-    except Exception as e:
-        print(f"Failed to send message: {e}")
-    await idle()
-    await bot.stop()
-
-
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.create_task(start_bot())
-    uvicorn.run(app, host="0.0.0.0", port=1489)
+    uvicorn.run("main:app", host="0.0.0.0", port=1489, reload=False)
+

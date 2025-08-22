@@ -1,92 +1,53 @@
 import os
-import sys
-import signal
 import asyncio
 import uvicorn
 from fastapi import FastAPI, Query
-from contextlib import asynccontextmanager
+from pymongo import MongoClient
 from pyrogram import Client
-from pyrogram.types import Message
-from motor.motor_asyncio import AsyncIOMotorClient
-from dotenv import load_dotenv
+from youtubesearchpython import VideosSearch
 import yt_dlp
-from youtubesearchpython.__future__ import VideosSearch
+from contextlib import asynccontextmanager
+from dotenv import load_dotenv
 
-# --------------------------
-# Load ENV
-# --------------------------
+# Load .env variables
 load_dotenv("config.env")
 
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-MONGO_URL = os.getenv("MONGO_URL")
 CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
+MONGO_URL = os.getenv("MONGO_URL", "mongodb://localhost:27017")
 
-# --------------------------
-# Mongo + Pyrogram
-# --------------------------
-mongo_client = AsyncIOMotorClient(MONGO_URL)
-db = mongo_client["youtube_db"]
+# MongoDB
+mongo = MongoClient(MONGO_URL)
+db = mongo["yt_stream"]
 collection = db["files"]
 
-tg_client = Client(
-    "tg_client",
-    api_id=API_ID,
-    api_hash=API_HASH,
-    bot_token=BOT_TOKEN
-)
+# Pyrogram client (global, start once)
+tg_client = Client("bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# --------------------------
-# Lifespan Manager
-# --------------------------
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    await tg_client.start()
-    await tg_client.send_message(CHANNEL_ID, "✅ Bot started and ready to stream!")
-    yield
-    await tg_client.send_message(CHANNEL_ID, "⛔ Bot shutting down...")
-    await tg_client.stop()
+# FastAPI app
+app = FastAPI()
 
-# --------------------------
-# FastAPI App
-# --------------------------
-app = FastAPI(title="YouTube → Telegram CDN API", lifespan=lifespan)
 
-# --------------------------
-# Helper Functions
-# --------------------------
-
-async def get_video_id(query: str) -> str:
-    """Return YouTube video ID from query or URL"""
-    # If input is a full YouTube link → yt_dlp দিয়ে extract করব
-    if "youtube.com" in query or "youtu.be" in query:
-        ydl_opts = {"quiet": True, "skip_download": True}
-        loop = asyncio.get_event_loop()
-
-        def run_ydl():
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(query, download=False)
-                return info.get("id")
-
-        return await loop.run_in_executor(None, run_ydl)
-
-    # Otherwise → youtube-search-python দিয়ে সার্চ
+# ---------- Helper Functions ----------
+async def search_video(query: str) -> str:
+    """Search YouTube video ID from query"""
     videos_search = VideosSearch(query, limit=1)
     result = await videos_search.next()
-    if result and "result" in result and len(result["result"]) > 0:
+    if result["result"]:
         return result["result"][0]["id"]
-
-    raise ValueError("No results found for query")
+    return None
 
 
 async def download_audio(video_id: str) -> str:
-    """Download YouTube best audio only (no ffmpeg)"""
+    """Download best audio (no ffmpeg)"""
     ydl_opts = {
         "format": "bestaudio/best",
         "outtmpl": f"{video_id}.%(ext)s",
         "quiet": True,
     }
+
     loop = asyncio.get_event_loop()
 
     def run_ydl():
@@ -96,61 +57,67 @@ async def download_audio(video_id: str) -> str:
 
     return await loop.run_in_executor(None, run_ydl)
 
-# --------------------------
-# API Endpoints
-# --------------------------
 
+async def get_tg_cdn(file_id: str) -> str:
+    """Generate Telegram CDN link from file_id"""
+    file = await tg_client.get_messages(CHANNEL_ID, int(file_id))
+    file_info = await file.download()
+    # Actually we don’t need local file, just CDN
+    cdn = (await tg_client.get_messages(CHANNEL_ID, int(file_id))).link
+    return cdn
+
+
+# ---------- FastAPI Lifespan ----------
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await tg_client.start()
+    await tg_client.send_message(CHANNEL_ID, "✅ Bot started")
+    yield
+    await tg_client.send_message(CHANNEL_ID, "⛔ Bot shutting down...")
+    await tg_client.stop()
+
+
+app.router.lifespan_context = lifespan
+
+
+# ---------- Routes ----------
 @app.get("/stream")
 async def stream(query: str = Query(..., description="YouTube query or link")):
-    video_id = await get_video_id(query)
+    # Step 1: find video_id
+    if "youtube.com" in query or "youtu.be" in query:
+        video_id = query.split("v=")[-1].split("&")[0] if "v=" in query else query.split("/")[-1]
+    else:
+        video_id = await search_video(query)
 
-    # Check DB
-    record = await collection.find_one({"video_id": video_id})
+    if not video_id:
+        return {"error": "No video found"}
+
+    # Step 2: check DB
+    record = collection.find_one({"video_id": video_id})
     if record:
-        file = await tg_client.get_file(record["file_id"])
-        direct_link = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file.file_path}"
-        return {"video_id": video_id, "direct_link": direct_link}
+        file_id = record["file_id"]
+        msg = await tg_client.get_messages(CHANNEL_ID, int(file_id))
+        cdn = msg.link
+        return {"video_id": video_id, "direct_link": cdn}
 
-    # Download YouTube audio
-    audio_file = await download_audio(video_id)
+    # Step 3: download
+    file_path = await download_audio(video_id)
 
-    # Upload to Telegram
-    sent: Message = await tg_client.send_audio(
-        chat_id=CHANNEL_ID,
-        audio=audio_file,
-        caption=f"VideoID: {video_id}"
-    )
+    # Step 4: upload to Telegram
+    msg = await tg_client.send_audio(CHANNEL_ID, file_path, caption=f"🎵 {video_id}")
 
-    # Local file delete
+    # Step 5: save to DB
+    collection.insert_one({"video_id": video_id, "file_id": msg.id})
+
+    # Step 6: cleanup
     try:
-        os.remove(audio_file)
-    except Exception as e:
-        print(f"Delete error: {e}")
+        os.remove(file_path)
+    except Exception:
+        pass
 
-    # Save to DB
-    await collection.insert_one({
-        "video_id": video_id,
-        "file_id": sent.audio.file_id
-    })
+    return {"video_id": video_id, "direct_link": msg.link}
 
-    # Fresh CDN link
-    file = await tg_client.get_file(sent.audio.file_id)
-    direct_link = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file.file_path}"
 
-    return {"video_id": video_id, "direct_link": direct_link}
-
-# --------------------------
-# Signal Handler
-# --------------------------
-def handle_shutdown(sig, frame):
-    print("Server stopped")
-    sys.exit(0)
-
-signal.signal(signal.SIGINT, handle_shutdown)
-signal.signal(signal.SIGTERM, handle_shutdown)
-
-# --------------------------
-# Run Server
-# --------------------------
+# ---------- Run ----------
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=1470)

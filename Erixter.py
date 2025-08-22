@@ -114,6 +114,16 @@ app.add_middleware(
 )
 
 
+
+
+
+
+
+
+
+
+
+
 @app.get("/")
 async def root():
     return {"message": "YouTube API is running"}
@@ -141,6 +151,22 @@ async def search_videos(query: str = Query(..., description="Search query")):
 
     except Exception:
         return {}
+
+
+
+
+@bot.on_message(filters.command("start") & filters.private)
+async def start_message_private(client, message):
+    return await message.reply_text(
+        f"{**Hello, {message.from_user.mention}**"
+    )
+
+
+
+
+
+
+
 
 
 if __name__ == "__main__":

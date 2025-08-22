@@ -17,6 +17,7 @@ load_dotenv("config.env")
 API_ID = os.getenv("API_ID", None)
 API_HASH = os.getenv("API_HASH", None)
 BOT_TOKEN = os.getenv("BOT_TOKEN", None)
+CHANNEL_ID = os.getenv("CHANNEL_ID", None)
 
 
 app = FastAPI(title="YouTube API")

@@ -114,7 +114,7 @@ async def lifespan(app: FastAPI):
 
     # --- Shutdown ---
     print("Shutting down...")
-    bot.dispatcher.handlers.clear()
+    bot.dispatcher.groups.clear()
     await bot.stop()   # this is enough
     await asyncio.sleep(0)
     print("Bot stopped")

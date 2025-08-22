@@ -192,7 +192,7 @@ async def search_videos(
         ) as resp:
             data = await resp.json()
             file_path = data["result"]["file_path"]
-            download_url = f"https://api.telegram.org/file/bot{bot.token}/{file_path}"
+            download_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
 
 
     # 10. Persist metadata

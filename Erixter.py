@@ -1,6 +1,7 @@
 import asyncio, os, re, requests, signal
 import sys, time, uvicorn, yt_dlp
 
+from bson import ObjectId
 from dotenv import load_dotenv
 from fastapi import FastAPI, Query
 from fastapi.responses import StreamingResponse
@@ -78,13 +79,13 @@ async def download_media(video_id: str, video: bool):
     return await loop.run_in_executor(None, media_dl)
 
 
-
-
-def clean_mongo_doc(doc: dict) -> dict:
+def clean_mongo(doc: dict) -> dict:
     if not doc:
         return {}
     doc = dict(doc)
-    doc.pop("_id", None)  # remove ObjectId
+    if "_id" in doc and isinstance(doc["_id"], ObjectId):
+        doc["_id"] = str(doc["_id"])  # or remove completely
+        # doc.pop("_id")   # if you don’t want it at all
     return doc
 
 
@@ -128,6 +129,12 @@ async def root():
 async def search_videos(query: str = Query(...), video: bool = Query(False)):
     db = video_db if video else audio_db
 
+    # search Mongo
+    existing = await db.find_one({"id": query})
+    if existing:
+        return clean_mongo(existing)
+
+    # otherwise fetch from yt, upload, save
     videos_search = VideosSearch(query, limit=1)
     result = await videos_search.next()
     videos = result.get("result", [])
@@ -137,12 +144,6 @@ async def search_videos(query: str = Query(...), video: bool = Query(False)):
     v = videos[0]
     vid_id = v["id"]
 
-    # --- Check if already in DB
-    existing = await db.find_one({"id": vid_id})
-    if existing:
-        return clean_mongo_doc(existing)
-
-    # --- Download Media
     filepath = await download_media(vid_id, video)
 
     tg_msg = await bot.send_document(
@@ -163,7 +164,7 @@ async def search_videos(query: str = Query(...), video: bool = Query(False)):
 
     await db.insert_one(data)
     if os.path.exists(filepath): os.remove(filepath)
-    return data
+    return clean_mongo(data)
 
 
 @bot.on_message(filters.command("start") & filters.private)

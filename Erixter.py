@@ -15,18 +15,18 @@ from youtubesearchpython.__future__ import VideosSearch
 load_dotenv("config.env")
 
 
-API_ID = os.getenv("API_ID", None)
+API_ID = int(os.getenv("API_ID", 0))
 API_HASH = os.getenv("API_HASH", None)
 BOT_TOKEN = os.getenv("BOT_TOKEN", None)
-CHANNEL_ID = os.getenv("CHANNEL_ID", None)
+CHANNEL_ID = int(os.getenv("CHANNEL_ID", 0))
 
 
 app = FastAPI(title="YouTube API")
 bot = Client(
-    name="Erixter",
-    api_id=int(API_ID),
-    api_hash=str(API_HASH),
-    bot_token=str(BOT_TOKEN),
+    "Erixter",
+    api_id=API_ID,
+    api_hash=API_HASH,
+    bot_token=BOT_TOKEN,
 )
 
 db = {}

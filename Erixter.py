@@ -78,6 +78,16 @@ async def download_media(video_id: str, video: bool):
     return await loop.run_in_executor(None, media_dl)
 
 
+
+
+def clean_mongo_doc(doc: dict) -> dict:
+    if not doc:
+        return {}
+    doc = dict(doc)
+    doc.pop("_id", None)  # remove ObjectId
+    return doc
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
@@ -127,10 +137,12 @@ async def search_videos(query: str = Query(...), video: bool = Query(False)):
     v = videos[0]
     vid_id = v["id"]
 
+    # --- Check if already in DB
     existing = await db.find_one({"id": vid_id})
     if existing:
-        return existing
+        return clean_mongo_doc(existing)
 
+    # --- Download Media
     filepath = await download_media(vid_id, video)
 
     tg_msg = await bot.send_document(

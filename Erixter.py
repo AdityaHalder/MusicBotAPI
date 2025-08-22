@@ -23,6 +23,46 @@ PUBLIC_IP = get_public_ip()
 
 
 
+
+async def download_media(video_id: str, video: bool):
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    loop = asyncio.get_event_loop()
+
+    def media_dl():
+        download_format = (
+            "bestaudio/best"
+            if not video
+            else "(bestvideo[height<=?720][width<=?1280][ext=mp4])+(bestaudio[ext=m4a])"
+        )
+
+        ydl_opts = {
+            "format": download_format,
+            "outtmpl": "downloads/%(id)s.%(ext)s",
+            "geo_bypass": True,
+            "nocheckcertificate": True,
+            "quiet": True,
+            "no_warnings": True,
+        }
+
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            filepath = os.path.join("downloads", f"{info['id']}.{info['ext']}")
+
+            if os.path.exists(filepath):
+                return filepath
+
+            ydl.download([url])
+            return filepath
+
+    return await loop.run_in_executor(None, media_dl)
+
+
+
+
+
+
+
+
 @app.get("/")
 async def root():
     return {"message": "YouTube API is running"}

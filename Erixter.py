@@ -4,7 +4,7 @@ import tempfile
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import RedirectResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from pyrogram import Client
 from pyrogram.types import Message
@@ -35,26 +35,26 @@ tg_client = Client("ytbot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKE
 # -------- FastAPI lifespan --------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
-    await tg_client.start()
-    print("✅ Pyrogram client started")
+    try:
+        await tg_client.start()
+        print("✅ Pyrogram client started")
 
-    # Startup এ চ্যানেলে মেসেজ পাঠানো
-    await tg_client.send_message(
-        chat_id=CHANNEL_ID,
-        text=f"🚀 Bot is now online!\nServer running on port {PORT}."
-    )
-
-    yield  # এখানে থেকে app চলবে
-
-    # Shutdown
-    await tg_client.send_message(
-        chat_id=CHANNEL_ID,
-        text="🛑 Bot is shutting down..."
-    )
-    await tg_client.stop()
-    mongo_client.close()
-    print("🛑 Pyrogram client stopped & DB closed")
+        await tg_client.send_message(
+            chat_id=CHANNEL_ID,
+            text=f"🚀 Bot is now online!\nServer running on port {PORT}."
+        )
+        yield
+    finally:
+        try:
+            await tg_client.send_message(
+                chat_id=CHANNEL_ID,
+                text="🛑 Bot is shutting down..."
+            )
+        except Exception:
+            pass
+        await tg_client.stop()
+        mongo_client.close()
+        print("🛑 Pyrogram client stopped & DB closed")
 
 # ====== FastAPI app ======
 app = FastAPI(lifespan=lifespan)
@@ -76,7 +76,6 @@ async def download_audio(video_id: str) -> str:
     tmpdir = tempfile.mkdtemp()
     output_path = os.path.join(tmpdir, "%(id)s.%(ext)s")
 
-    # no re-encode, সরাসরি best audio stream
     ydl_opts = {
         "format": "bestaudio[ext=m4a]/bestaudio/best",
         "outtmpl": output_path,
@@ -92,18 +91,7 @@ async def download_audio(video_id: str) -> str:
     for f in os.listdir(tmpdir):
         return os.path.join(tmpdir, f)
 
-# -------- Stream from Telegram --------
-async def stream_from_telegram(msg_id: int):
-    async def file_iterator():
-        async for chunk in tg_client.stream_media(
-            message=msg_id,
-            chat_id=CHANNEL_ID,
-            limit=1024 * 64
-        ):
-            yield chunk
-    return StreamingResponse(file_iterator(), media_type="audio/mpeg")
-
-# -------- Main Endpoint --------
+# -------- Main Streaming Endpoint --------
 @app.get("/stream")
 async def stream(query: str = Query(..., description="YouTube query or link")):
     video_id = await get_video_id(query)
@@ -111,7 +99,11 @@ async def stream(query: str = Query(..., description="YouTube query or link")):
     # Check MongoDB
     record = await collection.find_one({"video_id": video_id})
     if record:
-        return await stream_from_telegram(record["msg_id"])
+        # Telegram থেকে CDN link বের করো
+        msg = await tg_client.get_messages(CHANNEL_ID, record["msg_id"])
+        file = await tg_client.get_file(msg.audio.file_id)
+        direct_link = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file.file_path}"
+        return RedirectResponse(url=direct_link)
 
     # Download YouTube audio
     audio_file = await download_audio(video_id)
@@ -133,8 +125,12 @@ async def stream(query: str = Query(..., description="YouTube query or link")):
     # Save to DB
     await collection.insert_one({"video_id": video_id, "msg_id": msg_id})
 
-    # Stream directly from Telegram
-    return await stream_from_telegram(msg_id)
+    # আবার CDN link বের করো (upload এর পরে)
+    msg = await tg_client.get_messages(CHANNEL_ID, msg_id)
+    file = await tg_client.get_file(msg.audio.file_id)
+    direct_link = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file.file_path}"
+
+    return RedirectResponse(url=direct_link)
 
 # -------- Run Server --------
 if __name__ == "__main__":

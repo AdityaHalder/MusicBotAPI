@@ -144,8 +144,17 @@ async def start_bot():
     await bot.stop()
 
 
+async def main():
+    asyncio.create_task(start_bot())
+    config = uvicorn.Config(app, host="0.0.0.0", port=1489, loop="asyncio")
+    server = uvicorn.Server(config)
+    await server.serve()
+
+
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
-    loop.create_task(start_bot())
-    uvicorn.run(app, host="0.0.0.0", port=1489)
+    try:
+        loop.run_until_complete(main())
+    finally:
+        loop.close()
 

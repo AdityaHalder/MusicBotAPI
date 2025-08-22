@@ -104,15 +104,27 @@ async def lifespan(app: FastAPI):
     # Startup
     await bot.start()
     try:
-        await bot.send_message(CHANNEL_ID, "✅ Bot started and API is running!")
+        await bot.send_message(
+            CHANNEL_ID, "✅ Bot started and API is running!"
+        )
     except Exception as e:
         print(f"Failed to notify channel: {e}")
 
     yield  # <-- API runs here
 
     # Shutdown
+    print("Shutting down...")
+
+    # properly stop bot
     await bot.stop()
-    print("Bot stopped")
+
+    # cancel pending tasks
+    pending = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+    for task in pending:
+        task.cancel()
+    await asyncio.gather(*pending, return_exceptions=True)
+
+    print("Bot stopped and tasks cleaned up")
 
 
 # =======================

@@ -1,4 +1,4 @@
-import asyncio, os, re, requests, signal
+import aiohttp, asyncio, os, re, requests, signal
 import sys, time, uvicorn, yt_dlp
 
 from bson import ObjectId
@@ -186,10 +186,14 @@ async def search_videos(
     file_id = tg_media_file.file_id
 
     # 9. Build Telegram CDN URL
-    tg_file = await bot.get_file(file_id)
-    download_url = (
-        f"https://api.telegram.org/file/bot{bot.token}/{tg_file.file_path}"
-    )
+    async with aiohttp.ClientSession() as session:
+        async with session.get(
+            f"https://api.telegram.org/bot{bot.token}/getFile?file_id={file_id}"
+        ) as resp:
+            data = await resp.json()
+            file_path = data["result"]["file_path"]
+            download_url = f"https://api.telegram.org/file/bot{bot.token}/{file_path}"
+
 
     # 10. Persist metadata
     record = {

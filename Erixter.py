@@ -35,7 +35,7 @@ except Exception:
     print("⚠️ Invalid 'MONGO_URL'")
     sys.exit()
 
-mongodb = mdb.erixterapitest
+mongodb = mdb.erixterapitests
 
 audio_db = mongodb.audio_db
 video_db = mongodb.video_db
@@ -60,9 +60,10 @@ async def download_media(video_id: str, video: bool):
             if not video
             else "(bestvideo[height<=?720][width<=?1280][ext=mp4])+(bestaudio[ext=m4a])"
         )
+        ext = ".mp3" if not video else ".mp4"
         opts = {
             "format": fmt,
-            "outtmpl": "downloads/%(id)s.%(ext)s",
+            "outtmpl": f"downloads/%(id)s{ext}",
             "geo_bypass": True,
             "nocheckcertificate": True,
             "quiet": True,
@@ -85,7 +86,7 @@ def clean_mongo(doc: dict) -> dict:
     doc = dict(doc)
     if "_id" in doc and isinstance(doc["_id"], ObjectId):
         doc["_id"] = str(doc["_id"])  # or remove completely
-        # doc.pop("_id")   # if you don’t want it at all
+        doc.pop("_id")   # if you don’t want it at all
     return doc
 
 

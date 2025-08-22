@@ -35,7 +35,7 @@ except Exception:
     print("⚠️ Invalid 'MONGO_URL'")
     sys.exit()
 
-mongodb = mdb.erixterapitests
+mongodb = mdb.erixterapitestsx
 
 audio_db = mongodb.audio_db
 video_db = mongodb.video_db

@@ -16,8 +16,8 @@ load_dotenv("config.env")
 
 
 API_ID = int(os.getenv("API_ID", 0))
-API_HASH = os.getenv("API_HASH", None)
-BOT_TOKEN = os.getenv("BOT_TOKEN", None)
+API_HASH = str(os.getenv("API_HASH", "")
+BOT_TOKEN = str(os.getenv("BOT_TOKEN", ""))
 CHANNEL_ID = int(os.getenv("CHANNEL_ID", 0))
 
 

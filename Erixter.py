@@ -1,14 +1,31 @@
-import re, requests, signal, sys, time, uvicorn, yt_dlp
+import os, re, requests, signal, sys, time, uvicorn, yt_dlp
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, Query
 from fastapi.responses import StreamingResponse
 
+from pyrogram import Client
 from urllib.parse import urlparse, parse_qs
 from youtubesearchpython.__future__ import VideosSearch
 
 
-app = FastAPI(title="YouTube API")
 
+
+load_dotenv("config.env")
+
+
+API_ID = os.getenv("API_ID", None)
+API_HASH = os.getenv("API_HASH", None)
+BOT_TOKEN = os.getenv("BOT_TOKEN", None)
+
+
+app = FastAPI(title="YouTube API")
+bot = Client(
+    name="Erixter",
+    api_id=int(API_ID),
+    api_hash=str(API_HASH),
+    bot_token=str(BOT_TOKEN),
+)
 
 db = {}
 

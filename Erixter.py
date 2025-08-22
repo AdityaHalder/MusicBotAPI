@@ -34,9 +34,9 @@ async def root():
 
 
 @app.get("/search")
-async def search_videos(q: str = Query(..., description="Search query")):
+async def search_videos(query: str = Query(..., description="Search query")):
     try:
-        videos_search = VideosSearch(q, limit=1)
+        videos_search = VideosSearch(query, limit=1)
         result = await videos_search.next()
         videos = result.get("result", [])
         

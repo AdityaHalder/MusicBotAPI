@@ -35,7 +35,7 @@ except Exception:
     print("⚠️ Invalid 'MONGO_URL'")
     sys.exit()
 
-mongodb = mdb.erixter_api_test
+mongodb = mdb.erixter_api_tests
 
 audio_db = mongodb.audio_db
 video_db = mongodb.video_db
@@ -130,7 +130,7 @@ async def root():
 async def search_videos(query: str = Query(...), video: bool = Query(False)):
     db = video_db if video else audio_db
 
-    # Search YouTube first
+    # 1. Search YouTube
     videos_search = VideosSearch(query, limit=1)
     result = await videos_search.next()
     videos = result.get("result", [])
@@ -140,14 +140,15 @@ async def search_videos(query: str = Query(...), video: bool = Query(False)):
     v = videos[0]
     vid_id = v["id"]
 
-    # Now check DB by vidid
+    # 2. Check Mongo
     existing = await db.find_one({"id": vid_id})
     if existing:
         return clean_mongo(existing)
 
-    # Otherwise download & upload
+    # 3. Download locally
     filepath = await download_media(vid_id, video)
 
+    # 4. Send to Telegram channel
     tg_msg = await bot.send_document(
         CHANNEL_ID,
         filepath,
@@ -155,20 +156,34 @@ async def search_videos(query: str = Query(...), video: bool = Query(False)):
         file_name=f"{vid_id}{os.path.splitext(filepath)[1]}",
     )
 
+    # 5. Immediately fetch the file_path from Telegram
+    #    (Note: for audio/video use send_audio/send_video – adjust accordingly)
+    file_id = tg_msg.document.file_id
+    tg_file = await bot.get_file(file_id)
+
+    # 6. Build the direct‐download URL
+    download_url = (
+        f"https://api.telegram.org/file/bot{bot.token}/"
+        f"{tg_file.file_path}"
+    )
+
+    # 7. Prepare metadata record
     data = {
         "id": vid_id,
         "title": v["title"],
         "duration": v.get("duration"),
-        "channel": v["channel"]["name"] if "channel" in v else None,
+        "channel": v["channel"]["name"] if v.get("channel") else None,
         "thumbnail": v["thumbnails"][0]["url"] if v.get("thumbnails") else None,
         "stream_url": f"https://t.me/c/{str(CHANNEL_ID)[4:]}/{tg_msg.id}",
+        "download_url": download_url,
     }
 
+    # 8. Persist and clean up
     await db.insert_one(data)
-    if os.path.exists(filepath):
-        os.remove(filepath)
+    os.remove(filepath)
 
     return clean_mongo(data)
+
 
 
 @bot.on_message(filters.command("start") & filters.private)

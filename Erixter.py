@@ -36,6 +36,9 @@ except Exception:
 
 mongodb = mdb.erixterapitest
 
+audio_db = mongodb.audio_db
+video_db = mongodb.video_db
+
 
 def get_public_ip() -> str:
     try:
@@ -112,24 +115,43 @@ async def root():
 
 
 @app.get("/search")
-async def search_videos(query: str = Query(..., description="Search query")):
-    try:
-        videos_search = VideosSearch(query, limit=1)
-        result = await videos_search.next()
-        videos = result.get("result", [])
-        if not videos:
-            return {}
-        v = videos[0]
-        return {
-            "id": v["id"],
-            "title": v["title"],
-            "duration": v.get("duration"),
-            "channel": v["channel"]["name"] if "channel" in v else None,
-            "thumbnail": v["thumbnails"][0]["url"] if v.get("thumbnails") else None,
-            "stream_url": None,
-        }
-    except Exception:
+async def search_videos(query: str = Query(...), video: bool = Query(False)):
+    db = video_db if video else audio_db
+
+    videos_search = VideosSearch(query, limit=1)
+    result = await videos_search.next()
+    videos = result.get("result", [])
+    if not videos:
         return {}
+
+    v = videos[0]
+    vid_id = v["id"]
+
+    existing = await db.find_one({"id": vid_id})
+    if existing:
+        return existing
+
+    filepath = await download_media(vid_id, video)
+
+    tg_msg = await bot.send_document(
+        CHANNEL_ID,
+        filepath,
+        caption=v["title"],
+        file_name=f"{vid_id}{os.path.splitext(filepath)[1]}",
+    )
+
+    data = {
+        "id": vid_id,
+        "title": v["title"],
+        "duration": v.get("duration"),
+        "channel": v["channel"]["name"] if "channel" in v else None,
+        "thumbnail": v["thumbnails"][0]["url"] if v.get("thumbnails") else None,
+        "stream_url": f"https://t.me/c/{str(CHANNEL_ID)[4:]}/{tg_msg.id}",
+    }
+
+    await db.insert_one(data)
+    if os.path.exists(filepath): os.remove(filepath)
+    return data
 
 
 @bot.on_message(filters.command("start") & filters.private)

@@ -7,9 +7,11 @@ from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from pyrogram import Client, filters
-from urllib.parse import urlparse, parse_qs
-from youtubesearchpython.__future__ import VideosSearch
 from contextlib import asynccontextmanager
+from urllib.parse import urlparse, parse_qs
+from motor.motor_asyncio import AsyncIOMotorClient
+from youtubesearchpython.__future__ import VideosSearch
+
 
 
 # =======================
@@ -20,8 +22,8 @@ load_dotenv("config.env")
 API_ID = int(os.getenv("API_ID", 0))
 API_HASH = str(os.getenv("API_HASH", ""))
 BOT_TOKEN = str(os.getenv("BOT_TOKEN", ""))
+MONGO_URL = str(os.getenv("MONGO_URL", ""))
 CHANNEL_ID = int(os.getenv("CHANNEL_ID", 0))
-
 
 # =======================
 # Init Pyrogram Bot
@@ -33,7 +35,14 @@ bot = Client(
     bot_token=BOT_TOKEN,
 )
 
-db = {}
+
+try:
+    mdb = AsyncIOMotorClient(MONGO_URL)
+except Exception:
+    print("⚠️ 'MONGO_URL' - is not valid !!")
+    sys.exit()
+    
+mongodb = mdb.erixterapitest
 
 
 # =======================
@@ -86,6 +95,12 @@ async def download_media(video_id: str, video: bool):
 # =======================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    try:
+       await mdb.admin.command('ping')
+    except Exception:
+        print("⚠️ 'MONGO_URL' - is not valid !!")
+        sys.exit()
+        
     # Startup
     await bot.start()
     try:

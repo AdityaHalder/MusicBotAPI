@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Query
 from fastapi.responses import StreamingResponse
 
-from pyrogram import Client
+from pyrogram import Client, idle
 from urllib.parse import urlparse, parse_qs
 from youtubesearchpython.__future__ import VideosSearch
 
@@ -29,6 +29,8 @@ bot = Client(
 )
 
 db = {}
+
+
 
 
 def get_public_ip() -> str:
@@ -128,6 +130,21 @@ def handle_shutdown(sig, frame):
 signal.signal(signal.SIGINT, handle_shutdown)
 signal.signal(signal.SIGTERM, handle_shutdown)
 
+
+async def start_bot():
+    await bot.start()
+    try:
+        await bot.send_message(
+            CHANNEL_ID, "✅ Bot started and is running with API!"
+        )
+    except Exception as e:
+        print(f"Failed to send message: {e}")
+    await idle()
+    await bot.stop()
+
+
 if __name__ == "__main__":
+    loop = asyncio.get_event_loop()
+    loop.create_task(start_bot())
     uvicorn.run(app, host="0.0.0.0", port=1489)
 

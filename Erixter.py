@@ -127,62 +127,88 @@ async def root():
 
 
 @app.get("/search")
-async def search_videos(query: str = Query(...), video: bool = Query(False)):
+async def search_videos(
+    query: str = Query(..., description="Search term"),
+    video: bool = Query(False, description="True for video, False for audio"),
+):
+    # 1. Pick the right collection
     db = video_db if video else audio_db
 
-    # 1. Search YouTube
-    videos_search = VideosSearch(query, limit=1)
-    result = await videos_search.next()
-    videos = result.get("result", [])
-    if not videos:
+    # 2. Search YouTube
+    result = await VideosSearch(query, limit=1).next()
+    items = result.get("result", [])
+    if not items:
         return {}
 
-    v = videos[0]
+    v = items[0]
     vid_id = v["id"]
+    duration_str = v.get("duration", "0:00")
 
-    # 2. Check Mongo
-    existing = await db.find_one({"id": vid_id})
-    if existing:
-        return clean_mongo(existing)
+    # 3. Return cached doc if found
+    cached = await db.find_one({"id": vid_id})
+    if cached:
+        return clean_mongo(cached)
 
-    # 3. Download locally
+    # 4. Parse duration into seconds
+    parts = list(map(int, duration_str.split(":")))
+    if len(parts) == 3:
+        hrs, mins, secs = parts
+    elif len(parts) == 2:
+        hrs, mins, secs = 0, parts[0], parts[1]
+    else:
+        hrs, mins, secs = 0, 0, parts[0]
+    duration_seconds = hrs * 3600 + mins * 60 + secs
+
+    # 5. Download locally
     filepath = await download_media(vid_id, video)
 
-    # 4. Send to Telegram channel
+    # 6. Build caption with artist & duration
+    caption = (
+        f"{v['title']}\n"
+        f"Artist: @ErixterNetwork\n"
+        f"Duration: {duration_str}"
+    )
+
+    # 7. Send as document (force document mode)
     tg_msg = await bot.send_document(
-        CHANNEL_ID,
-        filepath,
-        caption=v["title"],
+        chat_id=CHANNEL_ID,
+        document=filepath,
+        caption=caption,
         file_name=f"{vid_id}{os.path.splitext(filepath)[1]}",
+        disable_content_type_detection=True,
     )
 
-    # 5. Immediately fetch the file_path from Telegram
-    #    (Note: for audio/video use send_audio/send_video – adjust accordingly)
+    # 8. Extract and cache the file_id
     file_id = tg_msg.document.file_id
-    tg_file = await bot.get_file(file_id)
 
-    # 6. Build the direct‐download URL
+    # 9. Build Telegram CDN URL
+    tg_file = await bot.get_file(file_id)
     download_url = (
-        f"https://api.telegram.org/file/bot{bot.token}/"
-        f"{tg_file.file_path}"
+        f"https://api.telegram.org/file/bot{bot.token}/{tg_file.file_path}"
     )
 
-    # 7. Prepare metadata record
-    data = {
+    # 10. Persist metadata
+    record = {
         "id": vid_id,
         "title": v["title"],
-        "duration": v.get("duration"),
-        "channel": v["channel"]["name"] if v.get("channel") else None,
-        "thumbnail": v["thumbnails"][0]["url"] if v.get("thumbnails") else None,
+        "artist": "@ErixterNetwork",
+        "duration_str": duration_str,
+        "duration_sec": duration_seconds,
+        "file_id": file_id,
+        "channel": v.get("channel", {}).get("name"),
+        "thumbnail": v.get("thumbnails", [{}])[0].get("url"),
         "stream_url": f"https://t.me/c/{str(CHANNEL_ID)[4:]}/{tg_msg.id}",
         "download_url": download_url,
     }
+    await db.insert_one(record)
+    
+    # 11. Cleanup
+    try:
+        os.remove(filepath)
+    except OSError:
+        pass
 
-    # 8. Persist and clean up
-    await db.insert_one(data)
-    os.remove(filepath)
-
-    return clean_mongo(data)
+    return clean_mongo(record)
 
 
 

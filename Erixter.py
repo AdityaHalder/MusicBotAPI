@@ -70,22 +70,25 @@ async def get_video_id(query: str) -> str:
         result = videos_search.result()
         return result["result"][0]["id"]
 
-# -------- Download YouTube Audio --------
+# -------- Optimized Download Audio --------
 async def download_audio(video_id: str) -> str:
     url = f"https://www.youtube.com/watch?v={video_id}"
     tmpdir = tempfile.mkdtemp()
     output_path = os.path.join(tmpdir, "%(id)s.%(ext)s")
+
+    # no re-encode, সরাসরি best audio stream
     ydl_opts = {
-        "format": "bestaudio/best",
+        "format": "bestaudio[ext=m4a]/bestaudio/best",
         "outtmpl": output_path,
         "noplaylist": True,
         "quiet": True,
-        "postprocessors": [
-            {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}
-        ]
     }
+
     loop = asyncio.get_event_loop()
-    await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(ydl_opts).download([url]))
+    await loop.run_in_executor(
+        None, lambda: yt_dlp.YoutubeDL(ydl_opts).download([url])
+    )
+
     for f in os.listdir(tmpdir):
         return os.path.join(tmpdir, f)
 

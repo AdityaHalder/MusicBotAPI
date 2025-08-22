@@ -112,20 +112,11 @@ async def lifespan(app: FastAPI):
 
     yield  # <-- API runs here
 
-    # Shutdown
+    # --- Shutdown ---
     print("Shutting down...")
-
-    # properly stop bot
-    await bot.stop()
-
-    # cancel pending tasks
-    pending = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
-    for task in pending:
-        task.cancel()
-    await asyncio.gather(*pending, return_exceptions=True)
-
-    print("Bot stopped and tasks cleaned up")
-
+    await bot.stop()   # this is enough
+    print("Bot stopped")
+    
 
 # =======================
 # FastAPI app

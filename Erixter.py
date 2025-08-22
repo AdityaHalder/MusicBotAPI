@@ -130,12 +130,7 @@ async def root():
 async def search_videos(query: str = Query(...), video: bool = Query(False)):
     db = video_db if video else audio_db
 
-    # search Mongo
-    existing = await db.find_one({"id": query})
-    if existing:
-        return clean_mongo(existing)
-
-    # otherwise fetch from yt, upload, save
+    # Search YouTube first
     videos_search = VideosSearch(query, limit=1)
     result = await videos_search.next()
     videos = result.get("result", [])
@@ -145,6 +140,12 @@ async def search_videos(query: str = Query(...), video: bool = Query(False)):
     v = videos[0]
     vid_id = v["id"]
 
+    # Now check DB by vidid
+    existing = await db.find_one({"id": vid_id})
+    if existing:
+        return clean_mongo(existing)
+
+    # Otherwise download & upload
     filepath = await download_media(vid_id, video)
 
     tg_msg = await bot.send_document(
@@ -164,7 +165,9 @@ async def search_videos(query: str = Query(...), video: bool = Query(False)):
     }
 
     await db.insert_one(data)
-    if os.path.exists(filepath): os.remove(filepath)
+    if os.path.exists(filepath):
+        os.remove(filepath)
+
     return clean_mongo(data)
 
 

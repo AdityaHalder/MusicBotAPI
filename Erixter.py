@@ -10,6 +10,7 @@ from pyrogram.types import Message
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
 import yt_dlp
+from youtubesearchpython.__future__ import VideosSearch
 
 # --------------------------
 # Load ENV
@@ -41,11 +42,9 @@ tg_client = Client(
 # --------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
     await tg_client.start()
     await tg_client.send_message(CHANNEL_ID, "✅ Bot started and ready to stream!")
     yield
-    # Shutdown
     await tg_client.send_message(CHANNEL_ID, "⛔ Bot shutting down...")
     await tg_client.stop()
 
@@ -59,16 +58,26 @@ app = FastAPI(title="YouTube → Telegram CDN API", lifespan=lifespan)
 # --------------------------
 
 async def get_video_id(query: str) -> str:
-    """Extract YouTube video ID using yt_dlp"""
-    ydl_opts = {"quiet": True, "skip_download": True}
-    loop = asyncio.get_event_loop()
+    """Return YouTube video ID from query or URL"""
+    # If input is a full YouTube link → yt_dlp দিয়ে extract করব
+    if "youtube.com" in query or "youtu.be" in query:
+        ydl_opts = {"quiet": True, "skip_download": True}
+        loop = asyncio.get_event_loop()
 
-    def run_ydl():
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(query, download=False)
-            return info.get("id")
+        def run_ydl():
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(query, download=False)
+                return info.get("id")
 
-    return await loop.run_in_executor(None, run_ydl)
+        return await loop.run_in_executor(None, run_ydl)
+
+    # Otherwise → youtube-search-python দিয়ে সার্চ
+    videos_search = VideosSearch(query, limit=1)
+    result = await videos_search.next()
+    if result and "result" in result and len(result["result"]) > 0:
+        return result["result"][0]["id"]
+
+    raise ValueError("No results found for query")
 
 
 async def download_audio(video_id: str) -> str:
@@ -86,7 +95,6 @@ async def download_audio(video_id: str) -> str:
             return ydl.prepare_filename(info)
 
     return await loop.run_in_executor(None, run_ydl)
-
 
 # --------------------------
 # API Endpoints
@@ -119,7 +127,7 @@ async def stream(query: str = Query(..., description="YouTube query or link")):
     except Exception as e:
         print(f"Delete error: {e}")
 
-    # Save to DB (video_id + file_id only)
+    # Save to DB
     await collection.insert_one({
         "video_id": video_id,
         "file_id": sent.audio.file_id
@@ -131,11 +139,9 @@ async def stream(query: str = Query(..., description="YouTube query or link")):
 
     return {"video_id": video_id, "direct_link": direct_link}
 
-
 # --------------------------
 # Signal Handler
 # --------------------------
-
 def handle_shutdown(sig, frame):
     print("Server stopped")
     sys.exit(0)
@@ -143,10 +149,8 @@ def handle_shutdown(sig, frame):
 signal.signal(signal.SIGINT, handle_shutdown)
 signal.signal(signal.SIGTERM, handle_shutdown)
 
-
 # --------------------------
 # Run Server
 # --------------------------
-
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=1470)

@@ -6,7 +6,7 @@ from fastapi import FastAPI, Query
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from pyrogram import Client, idle
+from pyrogram import Client, filters
 from urllib.parse import urlparse, parse_qs
 from youtubesearchpython.__future__ import VideosSearch
 from contextlib import asynccontextmanager

@@ -60,10 +60,10 @@ async def download_media(video_id: str, video: bool):
             if not video
             else "(bestvideo[height<=?720][width<=?1280][ext=mp4])+(bestaudio[ext=m4a])"
         )
-        ext = ".mp3" if not video else ".mp4"
+        ext = "mp3" if not video else "mp4"
         opts = {
             "format": fmt,
-            "outtmpl": f"downloads/%(id)s{ext}",
+            "outtmpl": f"downloads/%(id)s.{ext}",
             "geo_bypass": True,
             "nocheckcertificate": True,
             "quiet": True,

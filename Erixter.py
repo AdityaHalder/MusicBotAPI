@@ -188,15 +188,13 @@ async def search_videos(
 
     # 7. Send to Telegram
     if video:
-        tg_msg = await bot.send_video(
+        tg_msg = await bot.send_document(
             chat_id=CHANNEL_ID,
-            video=filepath,
-            caption=f"{v['title']}\nUploader: @ErixterNetwork",
+            document=filepath,
             duration=duration_seconds,
-            supports_streaming=True,
             file_name=file_name,
         )
-        file_id = tg_msg.video.file_id
+        file_id = tg_msg.video.file_id or tg_msg.document.file_id
     else:
         tg_msg = await bot.send_audio(
             chat_id=CHANNEL_ID,

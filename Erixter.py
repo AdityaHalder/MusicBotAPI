@@ -190,7 +190,7 @@ async def search_videos(
     if video:
         tg_msg = await bot.send_video(
             chat_id=CHANNEL_ID,
-            document=filepath,
+            video=filepath,
             duration=duration_seconds,
             file_name=file_name,
         )
